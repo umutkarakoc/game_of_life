@@ -34,10 +34,11 @@ const Game = struct {
     rows: i32 = 72,
 
     state: GameState = .Pause,
+    timer: f32 = 0,
+    timer_trigger: f32 = 0.25,
     cells: std.AutoHashMap(Cell, bool) = undefined,
     cursor_x: i32 = 0,
     cursor_y: i32 = 0,
-    create_cell_action: bool = false,
 
     pub fn update(game: *Game) void {
         var cursor_x: i32 = @divTrunc(rl.getMouseX(), game.cell_size);
@@ -78,6 +79,15 @@ const Game = struct {
         if (game.state == .Pause) {
             return;
         }
+        game.timer += game.dt;
+
+        // iterate game word on trigger
+        if (game.timer >= game.timer_trigger) {
+            game.timer = 0;
+        } else {
+            return;
+        }
+
         // Rules
         // 1. Any live cell with fewer than 2 live neighbors dies (underpopulation)
         // 2. Any live cell with 2 or 3 live neighbors survives
@@ -85,20 +95,36 @@ const Game = struct {
         // 4. Any dead cell with exactly 3 live neighbors becomes alive (reproduction)
 
         var cells_it = game.cells.iterator();
+        var counts = std.AutoHashMap(Cell, i8).init(game.cells.allocator);
         while (cells_it.next()) |cell| {
-            var neighbors: i32 = 0;
             for ([_]i32{ -1, 0, 1 }) |dx| {
                 for ([_]i32{ -1, 0, 1 }) |dy| {
                     if (dx == 0 and dy == 0) {
                         continue;
                     }
-                    if (game.cells.get(.{ .x = cell.key_ptr.x + dx, .y = cell.key_ptr.y + dy })) |val| {
-                        if (val)
-                            neighbors += 0;
-                    }
+                    const nb: Cell = .{ .x = cell.key_ptr.x + dx, .y = cell.key_ptr.y + dy };
+                    const e = counts.getOrPut(nb) catch continue;
+                    if (e.found_existing)
+                        e.value_ptr.* += 1
+                    else
+                        e.value_ptr.* = 1;
                 }
             }
         }
+
+        var next_cells = std.AutoHashMap(Cell, bool).init(game.cells.allocator);
+        var counts_it = counts.iterator();
+        while (counts_it.next()) |entry| {
+            const cell = entry.key_ptr.*;
+            const count: i8 = entry.value_ptr.*;
+            const alive = game.cells.contains(cell);
+            if ((alive and (count == 2 or count == 3)) or (!alive and count == 3)) {
+                _ = next_cells.put(cell, true) catch {};
+            }
+        }
+
+        game.cells.deinit();
+        game.cells = next_cells;
     }
 
     pub fn draw(game: *Game) void {
