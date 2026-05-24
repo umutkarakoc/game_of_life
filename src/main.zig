@@ -1,11 +1,14 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
+    const al = init.arena.allocator();
     rl.initWindow(1280, 720, "Game Of Life");
     defer rl.closeWindow();
 
-    var game: Game = .{};
+    var game: Game = .{
+        .cells = std.AutoHashMap(Cell, bool).init(al),
+    };
 
     while (!rl.windowShouldClose()) {
         game.dt = rl.getFrameTime();
@@ -14,7 +17,12 @@ pub fn main() !void {
     }
 }
 
-const GameState = enum { Idle, Play, Dead };
+const GameState = enum {
+    Pause,
+    Play,
+};
+
+const Cell = struct { x: i32, y: i32 };
 
 const Game = struct {
     sw: i32 = 1280,
@@ -25,7 +33,8 @@ const Game = struct {
     columns: i32 = 128,
     rows: i32 = 72,
 
-    grid: [128][72]bool = [_][72]bool{[_]bool{false} ** 72} ** 128,
+    state: GameState = .Pause,
+    cells: std.AutoHashMap(Cell, bool) = undefined,
     cursor_x: i32 = 0,
     cursor_y: i32 = 0,
     create_cell_action: bool = false,
@@ -49,7 +58,47 @@ const Game = struct {
 
         game.cursor_x = @intCast(cursor_x);
         game.cursor_y = @intCast(cursor_y);
-        game.create_cell_action = rl.isMouseButtonReleased(rl.MouseButton.left);
+        if (rl.isMouseButtonReleased(rl.MouseButton.left)) {
+            _ = game.cells.getOrPutValue(
+                .{ .x = game.cursor_x, .y = game.cursor_y },
+                true,
+            ) catch {};
+        }
+
+        if (game.state == .Play) {
+            if (rl.isKeyReleased(.space)) {
+                game.state = .Pause;
+            }
+        } else {
+            if (rl.isKeyReleased(.space)) {
+                game.state = .Play;
+            }
+        }
+
+        if (game.state == .Pause) {
+            return;
+        }
+        // Rules
+        // 1. Any live cell with fewer than 2 live neighbors dies (underpopulation)
+        // 2. Any live cell with 2 or 3 live neighbors survives
+        // 3. Any live cell with more than 3 live neighbors dies (overpopulation)
+        // 4. Any dead cell with exactly 3 live neighbors becomes alive (reproduction)
+
+        var cells_it = game.cells.iterator();
+        while (cells_it.next()) |cell| {
+            var neighbors: i32 = 0;
+            for ([_]i32{ -1, 0, 1 }) |dx| {
+                for ([_]i32{ -1, 0, 1 }) |dy| {
+                    if (dx == 0 and dy == 0) {
+                        continue;
+                    }
+                    if (game.cells.get(.{ .x = cell.key_ptr.x + dx, .y = cell.key_ptr.y + dy })) |val| {
+                        if (val)
+                            neighbors += 0;
+                    }
+                }
+            }
+        }
     }
 
     pub fn draw(game: *Game) void {
@@ -57,15 +106,6 @@ const Game = struct {
         defer rl.endDrawing();
 
         rl.clearBackground(.ray_white);
-
-        const current = &game.grid[@intCast(game.cursor_x)][@intCast(game.cursor_y)];
-
-        //create new cell if clicked
-        if (game.create_cell_action) {
-            if (!current.*) {
-                current.* = true;
-            }
-        }
 
         //Draw Grid
         for (0..@intCast(game.columns)) |x| {
@@ -90,31 +130,33 @@ const Game = struct {
         }
 
         //Draw cell preview
-        if (!current.*) {
+        rl.drawRectangle(
+            game.cursor_x * game.cell_size,
+            game.cursor_y * game.cell_size,
+            game.cell_size,
+            game.cell_size,
+            .dark_gray,
+        );
+
+        //Draw cells
+        var cells_it = game.cells.iterator();
+        while (cells_it.next()) |cell| {
             rl.drawRectangle(
-                game.cursor_x * game.cell_size,
-                game.cursor_y * game.cell_size,
+                cell.key_ptr.x * game.cell_size,
+                cell.key_ptr.y * game.cell_size,
                 game.cell_size,
                 game.cell_size,
-                .dark_gray,
+                .black,
             );
         }
 
-        //Draw cells
-        for (0..@intCast(game.columns)) |x| {
-            for (0..@intCast(game.rows)) |y| {
-                if (game.grid[x][y]) {
-                    const px: i32 = @intCast(x);
-                    const py: i32 = @intCast(y);
-                    rl.drawRectangle(
-                        px * game.cell_size,
-                        py * game.cell_size,
-                        game.cell_size,
-                        game.cell_size,
-                        .black,
-                    );
-                }
-            }
+        if (game.state == .Pause) {
+            const txt = "Paused (press space to start)";
+            const font_size = 30;
+            const text_width = rl.measureText(txt, font_size);
+            const x = @divTrunc(game.sw - text_width, 2);
+            const y = @divTrunc(game.sh - font_size, 2);
+            rl.drawText(txt, x, y, font_size, .black);
         }
     }
 };
