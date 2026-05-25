@@ -88,32 +88,18 @@ pub fn build(b: *std.Build) void {
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
     // by passing `--prefix` or `-p`.
-    b.installArtifact(exe);
-
-    // This creates a top level step. Top level steps have a name and can be
-    // invoked by name when running `zig build` (e.g. `zig build run`).
-    // This will evaluate the `run` step rather than the default step.
-    // For a top level step to actually do something, it must depend on other
-    // steps (e.g. a Run step, as we will see in a moment).
     const run_step = b.step("run", "Run the app");
 
-    // This creates a RunArtifact step in the build graph. A RunArtifact step
-    // invokes an executable compiled by Zig. Steps will only be executed by the
-    // runner if invoked directly by the user (in the case of top level steps)
-    // or if another step depends on it, so it's up to you to define when and
-    // how this Run step will be executed. In our case we want to run it when
-    // the user runs `zig build run`, so we create a dependency link.
-    const run_cmd = b.addRunArtifact(exe);
-    run_step.dependOn(&run_cmd.step);
+    if (target.query.os_tag != .emscripten) {
+        b.installArtifact(exe);
 
-    // By making the run step depend on the default step, it will be run from the
-    // installation directory rather than directly from within the cache directory.
-    run_cmd.step.dependOn(b.getInstallStep());
+        const run_cmd = b.addRunArtifact(exe);
+        run_step.dependOn(&run_cmd.step);
+        run_cmd.step.dependOn(b.getInstallStep());
 
-    // This allows the user to pass arguments to the application in the build
-    // command itself, like this: `zig build run -- arg1 arg2 etc`
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
+        }
     }
 
     // Creates an executable that will run `test` blocks from the provided module.
@@ -167,4 +153,34 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkLibrary(raylib_artifact);
     exe.root_module.addImport("raylib", raylib);
     exe.root_module.addImport("raygui", raygui);
+
+    if (target.query.os_tag == .emscripten) {
+        const emsdk = rlz.emsdk;
+        const wasm = b.addLibrary(.{
+            .name = "game_of_life",
+            .root_module = exe.root_module,
+        });
+
+        const install_dir: std.Build.InstallDir = .{ .custom = "web" };
+        const emcc_flags = emsdk.emccDefaultFlags(b.allocator, .{ .optimize = optimize });
+        const emcc_settings = emsdk.emccDefaultSettings(b.allocator, .{ .optimize = optimize });
+
+        const emcc_step = emsdk.emccStep(b, raylib_artifact, wasm, .{
+            .optimize = optimize,
+            .flags = emcc_flags,
+            .settings = emcc_settings,
+            .install_dir = install_dir,
+        });
+        b.getInstallStep().dependOn(emcc_step);
+
+        const html_filename = std.fmt.allocPrint(b.allocator, "{s}.html", .{wasm.name}) catch return;
+        const emrun_step = emsdk.emrunStep(
+            b,
+            b.getInstallPath(install_dir, html_filename),
+            &.{},
+        );
+
+        emrun_step.dependOn(emcc_step);
+        run_step.dependOn(emrun_step);
+    }
 }

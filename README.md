@@ -14,4 +14,5 @@ zig build run
 ```
 
 
-[![Watch the video](https://www.youtube.com/watch?v=MTSQzpODaw0)](https://www.youtube.com/watch?v=MTSQzpODaw0)
+<iframe src="https://itch.io/embed/2216056" frameborder="0" width="552" height="167"><a href="https://peakrio.itch.io/gameoflife">Conway&#039;s Game of Life by peakr.io</a></iframe>
+
