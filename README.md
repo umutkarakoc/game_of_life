@@ -14,5 +14,5 @@ zig build run
 ```
 
 
-<iframe src="https://itch.io/embed/2216056" frameborder="0" width="552" height="167"><a href="https://peakrio.itch.io/gameoflife">Conway&#039;s Game of Life by peakr.io</a></iframe>
+[![Available on itch.io](https://static.itch.io/images/badge-color.svg)](https://peakrio.itch.io/gameoflife)
 
